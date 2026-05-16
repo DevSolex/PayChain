@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Search, Plus, MoreHorizontal, UserCheck, UserX, Trash2 } from 'lucide-react'
+import { Search, Plus, UserCheck, UserX, Trash2, Pencil } from 'lucide-react'
 import api from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -10,8 +10,10 @@ import { Badge } from '@/components/ui/badge'
 import { Card, CardContent } from '@/components/ui/card'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { formatCurrency, shortenAddress } from '@/lib/utils'
+import { useToast } from '@/hooks/use-toast'
 import type { Employee } from '@/types'
 import { AddEmployeeDialog } from '@/components/employees/add-employee-dialog'
+import { EditEmployeeDialog } from '@/components/employees/edit-employee-dialog'
 
 const statusVariant: Record<string, 'success' | 'warning' | 'destructive'> = {
   ACTIVE: 'success',
@@ -23,7 +25,9 @@ export default function EmployeesPage() {
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('')
   const [showAdd, setShowAdd] = useState(false)
+  const [editEmployee, setEditEmployee] = useState<Employee | null>(null)
   const queryClient = useQueryClient()
+  const toast = useToast()
 
   const { data: employees = [], isLoading } = useQuery<Employee[]>({
     queryKey: ['employees', search, statusFilter],
@@ -31,20 +35,25 @@ export default function EmployeesPage() {
       const params = new URLSearchParams()
       if (search) params.set('search', search)
       if (statusFilter) params.set('status', statusFilter)
-      const res = await api.get(`/employees?${params}`)
-      return res.data.data
+      return (await api.get(`/employees?${params}`)).data.data
     },
   })
 
   const statusMutation = useMutation({
     mutationFn: ({ id, status }: { id: string; status: string }) =>
       api.patch(`/employees/${id}/status`, { status }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['employees'] }),
+    onSuccess: (_, { status }) => {
+      queryClient.invalidateQueries({ queryKey: ['employees'] })
+      toast({ title: status === 'ACTIVE' ? 'Employee resumed' : 'Employee suspended', variant: 'success' })
+    },
   })
 
   const deleteMutation = useMutation({
     mutationFn: (id: string) => api.delete(`/employees/${id}`),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['employees'] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['employees'] })
+      toast({ title: 'Employee removed', variant: 'success' })
+    },
   })
 
   return (
@@ -60,14 +69,24 @@ export default function EmployeesPage() {
       </div>
 
       {/* Filters */}
-      <div className="flex gap-3">
-        <div className="relative flex-1 max-w-sm">
+      <div className="flex gap-3 flex-wrap">
+        <div className="relative flex-1 min-w-[200px] max-w-sm">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-          <Input placeholder="Search employees..." className="pl-9" value={search} onChange={(e) => setSearch(e.target.value)} />
+          <Input
+            placeholder="Search employees..."
+            className="pl-9"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
         </div>
         <div className="flex gap-2">
           {['', 'ACTIVE', 'SUSPENDED'].map((s) => (
-            <Button key={s} variant={statusFilter === s ? 'default' : 'outline'} size="sm" onClick={() => setStatusFilter(s)}>
+            <Button
+              key={s}
+              variant={statusFilter === s ? 'default' : 'outline'}
+              size="sm"
+              onClick={() => setStatusFilter(s)}
+            >
               {s || 'All'}
             </Button>
           ))}
@@ -84,7 +103,7 @@ export default function EmployeesPage() {
                 <TableHead>Salary</TableHead>
                 <TableHead>Frequency</TableHead>
                 <TableHead>Status</TableHead>
-                <TableHead className="w-12" />
+                <TableHead className="w-24" />
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -120,16 +139,43 @@ export default function EmployeesPage() {
                     </TableCell>
                     <TableCell>
                       <div className="flex gap-1">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8"
+                          title="Edit"
+                          onClick={() => setEditEmployee(emp)}
+                        >
+                          <Pencil className="w-3.5 h-3.5" />
+                        </Button>
                         {emp.status === 'ACTIVE' ? (
-                          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => statusMutation.mutate({ id: emp.id, status: 'SUSPENDED' })}>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8"
+                            title="Suspend"
+                            onClick={() => statusMutation.mutate({ id: emp.id, status: 'SUSPENDED' })}
+                          >
                             <UserX className="w-3.5 h-3.5" />
                           </Button>
                         ) : (
-                          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => statusMutation.mutate({ id: emp.id, status: 'ACTIVE' })}>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8"
+                            title="Resume"
+                            onClick={() => statusMutation.mutate({ id: emp.id, status: 'ACTIVE' })}
+                          >
                             <UserCheck className="w-3.5 h-3.5" />
                           </Button>
                         )}
-                        <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => deleteMutation.mutate(emp.id)}>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8 text-destructive"
+                          title="Remove"
+                          onClick={() => deleteMutation.mutate(emp.id)}
+                        >
                           <Trash2 className="w-3.5 h-3.5" />
                         </Button>
                       </div>
@@ -143,6 +189,7 @@ export default function EmployeesPage() {
       </Card>
 
       <AddEmployeeDialog open={showAdd} onClose={() => setShowAdd(false)} />
+      <EditEmployeeDialog employee={editEmployee} onClose={() => setEditEmployee(null)} />
     </div>
   )
 }
