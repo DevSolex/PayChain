@@ -6,32 +6,59 @@ PayChain enables companies to onboard employees, assign salaries, and automate r
 
 ## Tech Stack
 
-| Layer      | Technology                              |
-|------------|-----------------------------------------|
-| Frontend   | Next.js 15, TypeScript, Tailwind, Shadcn |
-| Backend    | Node.js, Express, Prisma, PostgreSQL    |
-| Blockchain | Stellar, Soroban smart contracts        |
-| Auth       | JWT, bcrypt                             |
-| Scheduling | node-cron                               |
-| Charts     | Recharts                                |
+| Layer      | Technology                                    |
+|------------|-----------------------------------------------|
+| Frontend   | Next.js 15, TypeScript, Tailwind CSS, Shadcn  |
+| Backend    | Node.js, Express, Prisma ORM, PostgreSQL      |
+| Blockchain | Stellar SDK, Soroban smart contracts (Rust)   |
+| Auth       | JWT, bcrypt                                   |
+| Scheduling | node-cron                                     |
+| Charts     | Recharts                                      |
+| State      | Zustand, React Query                          |
 
 ## Project Structure
 
 ```
 paychain/
 ├── apps/
-│   ├── frontend/          # Next.js 15 app
-│   └── backend/           # Express API
-├── contracts/             # Soroban smart contracts (Rust)
-└── package.json           # Monorepo root
+│   ├── frontend/                  # Next.js 15 app
+│   │   ├── app/
+│   │   │   ├── (auth)/            # Login, Register
+│   │   │   ├── (dashboard)/       # Protected dashboard routes
+│   │   │   └── page.tsx           # Landing page
+│   │   ├── components/
+│   │   │   ├── ui/                # Shadcn-style UI primitives
+│   │   │   ├── layout/            # Sidebar, Topbar
+│   │   │   ├── dashboard/         # Stat cards, charts
+│   │   │   ├── employees/         # Employee dialogs
+│   │   │   ├── payroll/           # Payroll dialogs
+│   │   │   └── wallet/            # Wallet button
+│   │   ├── store/                 # Zustand stores (auth, wallet)
+│   │   ├── hooks/                 # Custom hooks
+│   │   ├── lib/                   # API client, utils
+│   │   └── types/                 # TypeScript types
+│   └── backend/                   # Express API
+│       ├── src/
+│       │   ├── routes/            # auth, employees, payroll, analytics, wallets
+│       │   ├── middleware/        # auth, error
+│       │   ├── services/          # stellar, payment
+│       │   ├── jobs/              # payroll-scheduler (cron)
+│       │   ├── utils/             # prisma, auth, config, validators
+│       │   └── types/             # shared types
+│       └── prisma/
+│           └── schema.prisma      # Database schema
+└── contracts/                     # Soroban smart contracts (Rust)
+    ├── payroll/                   # Employee registry contract
+    └── payment/                   # Payment executor contract
 ```
 
 ## Quick Start
 
 ### Prerequisites
 - Node.js 20+
-- PostgreSQL
-- Redis (optional for caching)
+- PostgreSQL 14+
+- Redis (optional)
+- Rust + Stellar CLI (for contracts)
 
 ### 1. Clone & Install
 
@@ -46,11 +73,11 @@ npm install
 ```bash
 # Backend
 cp apps/backend/.env.example apps/backend/.env
-# Edit DATABASE_URL, JWT_SECRET, STELLAR_ADMIN_SECRET
+# Required: DATABASE_URL, JWT_SECRET, STELLAR_ADMIN_SECRET
 
 # Frontend
 cp apps/frontend/.env.example apps/frontend/.env.local
-# Edit NEXT_PUBLIC_API_URL
+# Required: NEXT_PUBLIC_API_URL
 ```
 
 ### 3. Setup Database
@@ -64,38 +91,112 @@ npm run db:generate   # Generate Prisma client
 ### 4. Run Development
 
 ```bash
-# From root
+# From root — starts both frontend and backend
 npm run dev
+
 # Frontend: http://localhost:3000
 # Backend:  http://localhost:4000
+# Health:   http://localhost:4000/health
 ```
 
-## API Endpoints
+### 5. Docker (optional)
 
-| Method | Endpoint                    | Description           |
-|--------|-----------------------------|-----------------------|
-| POST   | /api/auth/register          | Register user         |
-| POST   | /api/auth/login             | Login                 |
-| GET    | /api/employees              | List employees        |
-| POST   | /api/employees              | Add employee          |
-| PUT    | /api/employees/:id          | Update employee       |
-| DELETE | /api/employees/:id          | Remove employee       |
-| GET    | /api/payroll                | List payrolls         |
-| POST   | /api/payroll                | Create payroll        |
-| POST   | /api/payroll/:id/execute    | Execute payment       |
-| GET    | /api/analytics/overview     | Dashboard stats       |
+```bash
+docker-compose up -d   # Starts postgres + redis + backend
+```
 
-## Supported Chains
+## API Reference
 
-- **Stellar** (primary) — USDC, USDT, XLM
-- **Base** (planned)
-- **Celo** (planned)
+### Auth
+| Method | Endpoint             | Auth | Description        |
+|--------|----------------------|------|--------------------|
+| POST   | /api/auth/register   | —    | Register + company |
+| POST   | /api/auth/login      | —    | Login              |
+| GET    | /api/auth/me         | JWT  | Current user       |
+
+### Employees
+| Method | Endpoint                      | Role        | Description       |
+|--------|-------------------------------|-------------|-------------------|
+| GET    | /api/employees                | Any         | List employees    |
+| POST   | /api/employees                | ADMIN/HR    | Add employee      |
+| GET    | /api/employees/:id            | Any         | Employee profile  |
+| PUT    | /api/employees/:id            | ADMIN/HR    | Update employee   |
+| PATCH  | /api/employees/:id/status     | ADMIN/HR    | Suspend/resume    |
+| DELETE | /api/employees/:id            | ADMIN       | Remove employee   |
+
+### Payroll
+| Method | Endpoint                      | Role        | Description       |
+|--------|-------------------------------|-------------|-------------------|
+| GET    | /api/payroll                  | Any         | List payrolls     |
+| POST   | /api/payroll                  | ADMIN/HR    | Create payroll    |
+| POST   | /api/payroll/:id/approve      | ADMIN       | Approve payroll   |
+| POST   | /api/payroll/:id/execute      | ADMIN       | Execute payment   |
+| POST   | /api/payroll/bulk-execute     | ADMIN       | Bulk execute      |
+| POST   | /api/payroll/:id/cancel       | ADMIN/HR    | Cancel payroll    |
+
+### Analytics
+| Method | Endpoint                  | Auth | Description         |
+|--------|---------------------------|------|---------------------|
+| GET    | /api/analytics/overview   | JWT  | Dashboard stats     |
+
+### Wallets
+| Method | Endpoint                      | Auth | Description         |
+|--------|-------------------------------|------|---------------------|
+| POST   | /api/wallets/connect          | JWT  | Save wallet address |
+| GET    | /api/wallets/balance/:address | JWT  | Get balances        |
+| GET    | /api/wallets/me               | JWT  | My wallet           |
+
+## Smart Contracts
+
+Contracts are in `contracts/` and written in Rust for Soroban.
+
+```bash
+# Build contracts
+cd contracts
+stellar contract build
+
+# Deploy (see contracts/deploy.sh for full commands)
+stellar contract deploy --wasm target/wasm32-unknown-unknown/release/paychain_payroll.wasm \
+  --source <SECRET> --network testnet
+```
 
 ## Deployment
 
-- **Frontend**: Vercel — `vercel deploy`
-- **Backend**: Railway/Render — connect repo, set env vars
-- **Database**: Supabase or Railway PostgreSQL
+### Frontend → Vercel
+```bash
+cd apps/frontend
+vercel deploy
+```
+
+### Backend → Railway
+1. Connect repo to Railway
+2. Set root directory to `apps/backend`
+3. Add environment variables
+4. Deploy
+
+### Database → Supabase
+1. Create project at supabase.com
+2. Copy connection string to `DATABASE_URL`
+3. Run `npm run db:push`
+
+## Supported Tokens
+
+| Token | Network | Status |
+|-------|---------|--------|
+| USDC  | Stellar | Live   |
+| USDT  | Stellar | Live   |
+| XLM   | Stellar | Live   |
+
+## Roadmap
+
+- [ ] Base chain support
+- [ ] Celo chain support
+- [ ] Fiat-to-crypto onramp
+- [ ] Tax estimation module
+- [ ] AI payroll insights
+- [ ] Employee NFT identity
+- [ ] DAO treasury integration
+- [ ] Real-time salary streaming (Soroban)
 
 ## License
 
